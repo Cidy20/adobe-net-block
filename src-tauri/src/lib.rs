@@ -1,4 +1,5 @@
 use std::fs;
+use std::process::Command;
 
 const START_MARKER: &str = "# Cidy‘s Adobe Net Block Start";
 const END_MARKER: &str = "# Cidy‘s Adobe Net Block End";
@@ -62,13 +63,46 @@ async fn update_hosts(url: String) -> Result<(), String> {
         END_MARKER
     );
 
-    fs::write(HOSTS_PATH, updated_hosts).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::PermissionDenied {
-            "Permission denied. Please run with administrator/sudo privileges.".to_string()
-        } else {
-            e.to_string()
+    // Write to a temporary file first
+    let temp_dir = std::env::temp_dir();
+    let temp_file_path = temp_dir.join("hosts_update_tmp");
+    fs::write(&temp_file_path, updated_hosts).map_err(|e| format!("Failed to write temp file: {}", e))?;
+    let temp_path_str = temp_file_path.to_str().ok_or("Invalid temp path")?;
+
+    #[cfg(target_os = "macos")]
+    {
+        // Use osascript to copy with administrator privileges
+        let script = format!("do shell script \"cp '{}' '{}'\" with administrator privileges with prompt \"Adobe Net Block 需要管理员权限来更新 Hosts 文件。\"", temp_path_str, HOSTS_PATH);
+        let output = Command::new("osascript")
+            .arg("-e")
+            .arg(script)
+            .output()
+            .map_err(|e| format!("Failed to execute command: {}", e))?;
+
+        if !output.status.success() {
+            return Err("Permission denied or cancelled.".to_string());
         }
-    })?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Use PowerShell to run cmd copy as administrator
+        let copy_cmd = format!("/c copy /y \"{}\" \"{}\"", temp_path_str, HOSTS_PATH);
+        let output = Command::new("powershell")
+            .args(["Start-Process", "cmd", "-Verb", "RunAs", "-Wait", "-WindowStyle", "Hidden", "-ArgumentList"])
+            .arg(format!("'{}'", copy_cmd))
+            .output()
+            .map_err(|e| format!("Failed to execute command: {}", e))?;
+
+        if !output.status.success() {
+             return Err("Permission denied or cancelled.".to_string());
+        }
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        fs::write(HOSTS_PATH, temp_path_str).map_err(|e| e.to_string())?;
+    }
 
     Ok(())
 }

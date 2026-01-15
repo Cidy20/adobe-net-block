@@ -1,6 +1,7 @@
 # Adobe 联网屏蔽工具
 
 一个简单的工具，用于屏蔽 Adobe 联网连接。
+Adobe屏蔽信息来源：Github ignaciocastro/a-dove-is-dumb
 
 ## 功能特点
 
